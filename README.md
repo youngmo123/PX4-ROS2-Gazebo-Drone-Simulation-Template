@@ -86,3 +86,99 @@ This setup is tested on Ubuntu 22.04 and is not compatible with its derivatives 
   ```
 
   For additional details, refer to the [ROS2 Package documentation](https://docs.ros.org/en/humble/Tutorials/Beginner-Client-Libraries/Creating-Your-First-ROS2-Package.html).
+
+1. map cache 삭제 후 
+
+Q그라운드컨트롤 지도 적용안되면 아래 스크립트 따라해보세요
+
+rm -rf ~/.cache/QGroundControl/QGCMapCache* ~/.cache/QtLocation/* 2>/dev/null || true
+ini=~/.config/QGroundControl/QGroundControl.ini
+mkdir -p "$(dirname "$ini")"
+if grep -q '^\[FlightMapPosition\]' "$ini" 2>/dev/null; then
+sed -i '/^\[FlightMapPosition\]/,/^\[/{s/^FlightMapZoom=.*/FlightMapZoom=12/; s/^Latitude=.*/Latitude=37.5665/; s/^Longitude=.*/Longitude=126.9780/}' "$ini"
+else
+cat >> "$ini" <<'EOF'
+[FlightMapPosition]
+FlightMapZoom=12
+Latitude=37.5665
+Longitude=126.9780
+EOF
+fi
+./QGroundControl-x86_64.AppImage
+
+새창에서 
+
+MicroXRCEAgent udp4 -p 8888
+
+새창에서 
+
+cd ~/PX4-Autopilot
+
+PX4_SYS_AUTOSTART=4010 \
+PX4_SIM_MODEL=gz_x500_mono_cam \
+PX4_GZ_WORLD=baylands \
+PX4_GZ_MODEL_POSE="1,1,0.1,0,0,0.9" \
+build/px4_sitl_default/bin/px4
+
+안뜰경우 새창에서 
+
+gz service -l | grep /world/test_world
+확인 후
+
+gz sim -g
+
+안뜰경우 프로세스 죽이는 명령어 실행 재 실행
+
+pkill -f “gz sim”
+
+cd ~/PX4-Autopilot
+
+PX4_SYS_AUTOSTART=4010 \
+PX4_SIM_MODEL=gz_x500_mono_cam \
+PX4_GZ_WORLD=baylands \
+PX4_GZ_MODEL_POSE="1,1,0.1,0,0,0.9" \
+build/px4_sitl_default/bin/px4
+
+창고 지도로 gz sim 띄위는 명령어
+
+cd ~/PX4-Autopilot
+
+PX4_SYS_AUTOSTART=4010 \
+PX4_SIM_MODEL=gz_x500_mono_cam \
+PX4_GZ_WORLD=warehouse \
+PX4_GZ_MODEL_POSE="1,1,0.1,0,0,0.9" \
+build/px4_sitl_default/bin/px4
+
+지도에 카메라 켜는 법 
+
+터미널1
+
+export PROTOCOL_BUFFERS_PYTHON_IMPLEMENTATION=python
+
+cd /home/youngmo/PX4-ROS2-Gazebo-Drone-Simulation-Template/ws_ros2
+source install/setup.bash
+ros2 run drone_pilot gz_camera_bridge --ros-args -p gz_topic:=/camera -p ros_topic:=/camera/image_raw
+
+터미널 2
+
+cd /home/youngmo/PX4-ROS2-Gazebo-Drone-Simulation-Template/ws_ros2
+source install/setup.bash
+ros2 run gscam_udp stream --ros-args \
+-p topic:=/camera/image_raw \
+-p host:=127.0.0.1 -p port:=5600 \
+-p bitrate:=4000 -p fps:=30 -p keyint:=30
+
+그냥 카메라 켜는 법
+
+cd ~/PX4-ROS2-Gazebo-Drone-Simulation-Template/ws_ros2
+colcon build
+source install/local_setup.bash
+ros2 run my_offboard_ctrl offboard_ctrl_example
+
+web서버 실행 시키는 법
+
+cd ~/PX4-ROS2-Gazebo-Drone-Simulation-Template/web
+
+./auto_start.sh
+http://localhost:8000/drone_control_mavsdk.html
+위 주소로 접속
