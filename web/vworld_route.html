@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>VWorld Route Planner</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html, body {
+      height: 100%;
+      margin: 0;
+      font-family: "Segoe UI", Arial, sans-serif;
+    }
+    #map {
+      position: absolute;
+      inset: 0;
+    }
+    .panel {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      width: 320px;
+      background: rgba(0, 0, 0, 0.65);
+      color: #fff;
+      padding: 12px;
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+      backdrop-filter: blur(4px);
+    }
+    .panel h1 {
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .panel button {
+      margin: 4px 4px 4px 0;
+      padding: 6px 10px;
+      border: none;
+      border-radius: 4px;
+      background: #1e88e5;
+      color: #fff;
+      cursor: pointer;
+    }
+    .panel button.secondary {
+      background: #555;
+    }
+    .panel textarea {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+      border-radius: 4px;
+      border: none;
+      padding: 6px;
+      margin-top: 6px;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .panel .status {
+      margin-top: 6px;
+      font-size: 12px;
+      min-height: 16px;
+    }
+    .panel table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 6px;
+      font-size: 12px;
+    }
+    .panel table td {
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      padding: 2px 0;
+    }
+    .panel label {
+      font-size: 12px;
+      display: block;
+      margin-top: 6px;
+    }
+    .panel input[type="number"] {
+      width: 96px;
+      padding: 4px;
+      border-radius: 4px;
+      border: none;
+      margin-right: 4px;
+    }
+    .hint {
+      font-size: 11px;
+      opacity: 0.75;
+      margin-top: 4px;
+      line-height: 1.4;
+    }
+  </style>
+  <script>
+    (function loadVWorld() {
+      const params = new URLSearchParams(window.location.search);
+      const apiKey = params.get('key') || window.VWORLD_API_KEY || 'SAMPLE-KEY';
+      const script = document.createElement('script');
+      script.src = `https://map.vworld.kr/js/webglMapInit.js.do?version=3.0&apiKey=${apiKey}`;
+      script.async = true;
+      script.onload = () => window.dispatchEvent(new Event('vworldready'));
+      script.onerror = () => {
+        const status = document.getElementById('status');
+        if (status) {
+          status.textContent = 'Failed to load VWorld tileset. Check API key or network.';
+        }
+      };
+      document.head.appendChild(script);
+    })();
+  </script>
+</head>
+<body>
+  <div id="map"></div>
+  <div class="panel">
+    <h1>Seoul Plaza Route</h1>
+    <div>
+      <button id="toggleDraw">Enable Drawing</button>
+      <button id="clearRoute" class="secondary">Clear</button>
+      <button id="undoPoint" class="secondary">Undo</button>
+    </div>
+    <label>Default altitude (m AMSL)
+      <input type="number" id="defaultAlt" value="40" step="1" />
+    </label>
+    <textarea id="geojsonInput" placeholder="Paste GeoJSON LineString or FeatureCollection here"></textarea>
+    <div>
+      <button id="loadGeojson" class="secondary">Load GeoJSON</button>
+      <button id="sendRoute">Send to Drone</button>
+    </div>
+    <div class="status" id="status">Waiting for VWorld script…</div>
+    <table id="routeTable"></table>
+    <div class="hint">
+      1) Append <code>?key=YOUR_VWORLD_KEY</code> to the URL.<br />
+      2) Click "Enable Drawing" and tap the map to build a path. The route is sent as GeoJSON to <code>http://localhost:18080/route</code>.
+    </div>
+  </div>
+
+  <script>
+    const routeCoords = [];
+    let map = null;
+    let viewer = null;
+    let drawing = false;
+    let routeEntity = null;
+    let clickHandler = null;
+
+    const statusLabel = document.getElementById('status');
+    const routeTable = document.getElementById('routeTable');
+    const defaultAltInput = document.getElementById('defaultAlt');
+
+    function cesiumNamespace() {
+      return window.Cesium || (window.vw && window.vw.Cesium);
+    }
+
+    function updateStatus(message, ok = true) {
+      statusLabel.textContent = message;
+      statusLabel.style.color = ok ? '#c8f7c5' : '#ffb199';
+    }
+
+    function updateRouteTable() {
+      if (!routeCoords.length) {
+        routeTable.innerHTML = '<tr><td>No waypoints</td></tr>';
+        return;
+      }
+      const rows = routeCoords.map((p, idx) => `
+        <tr>
+          <td>#${idx + 1}</td>
+          <td>${p.lat.toFixed(6)}</td>
+          <td>${p.lon.toFixed(6)}</td>
+          <td>${p.alt.toFixed(1)} m</td>
+        </tr>
+      `);
+      routeTable.innerHTML = rows.join('');
+    }
+
+    function redrawPolyline() {
+      const Cesium = cesiumNamespace();
+      if (!viewer || !Cesium) {
+        return;
+      }
+      if (routeEntity) {
+        viewer.entities.remove(routeEntity);
+        routeEntity = null;
+      }
+      if (routeCoords.length < 2) {
+        return;
+      }
+      const positions = routeCoords.map((p) => Cesium.Cartesian3.fromDegrees(p.lon, p.lat, p.alt));
+      routeEntity = viewer.entities.add({
+        polyline: {
+          positions,
+          width: 3,
+          material: Cesium.Color.ORANGE,
+          clampToGround: false,
+        },
+      });
+    }
+
+    function addPoint(lat, lon, alt) {
+      routeCoords.push({ lat, lon, alt });
+      updateRouteTable();
+      redrawPolyline();
+    }
+
+    function undoPoint() {
+      if (routeCoords.length) {
+        routeCoords.pop();
+        updateRouteTable();
+        redrawPolyline();
+      }
+    }
+
+    function clearRoute() {
+      routeCoords.length = 0;
+      updateRouteTable();
+      redrawPolyline();
+    }
+
+    function toggleDrawing() {
+      drawing = !drawing;
+      document.getElementById('toggleDraw').textContent = drawing ? 'Disable Drawing' : 'Enable Drawing';
+      if (drawing) {
+        updateStatus('Drawing enabled — click on the map to add waypoints.');
+      } else {
+        updateStatus('Drawing disabled.');
+      }
+    }
+
+    function parseGeoJSON(raw) {
+      const data = JSON.parse(raw);
+      const points = [];
+      function pushCoords(coords) {
+        for (const entry of coords) {
+          if (!Array.isArray(entry) || entry.length < 2) {
+            throw new Error('Invalid coordinate tuple');
+          }
+          const [lon, lat, altRaw] = entry;
+          const alt = Number.isFinite(altRaw) ? altRaw : Number(defaultAltInput.value) || 40;
+          points.push({ lat: Number(lat), lon: Number(lon), alt });
+        }
+      }
+      if (data.type === 'LineString') {
+        pushCoords(data.coordinates);
+      } else if (data.type === 'FeatureCollection') {
+        data.features.forEach((feature) => {
+          if (!feature || !feature.geometry) {
+            return;
+          }
+          if (feature.geometry.type === 'LineString') {
+            pushCoords(feature.geometry.coordinates);
+          }
+        });
+      } else if (data.type === 'Feature' && data.geometry) {
+        if (data.geometry.type === 'LineString') {
+          pushCoords(data.geometry.coordinates);
+        }
+      } else {
+        throw new Error('Unsupported GeoJSON type');
+      }
+      return points;
+    }
+
+    async function sendRoute() {
+      if (!routeCoords.length) {
+        updateStatus('No waypoints to send.', false);
+        return;
+      }
+      const payload = {
+        type: 'Feature',
+        properties: { source: 'vworld_route.html', timestamp: Date.now() },
+        geometry: {
+          type: 'LineString',
+          coordinates: routeCoords.map((p) => [p.lon, p.lat, p.alt]),
+        },
+      };
+      updateStatus('Sending route…');
+      try {
+        const res = await fetch('http://localhost:18080/route', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json();
+        if (res.ok) {
+          updateStatus(`Route queued (${body.points || routeCoords.length} waypoints).`);
+        } else {
+          updateStatus(`Server error: ${body.detail || res.status}`, false);
+        }
+      } catch (err) {
+        updateStatus(`Network error: ${err}`, false);
+      }
+    }
+
+    function installHandlers() {
+      document.getElementById('toggleDraw').onclick = toggleDrawing;
+      document.getElementById('clearRoute').onclick = () => { clearRoute(); updateStatus('Route cleared.'); };
+      document.getElementById('undoPoint').onclick = () => { undoPoint(); updateStatus('Removed last waypoint.'); };
+      document.getElementById('sendRoute').onclick = sendRoute;
+      document.getElementById('loadGeojson').onclick = () => {
+        try {
+          const raw = document.getElementById('geojsonInput').value;
+          if (!raw.trim()) {
+            updateStatus('GeoJSON input is empty.', false);
+            return;
+          }
+          const points = parseGeoJSON(raw);
+          clearRoute();
+          points.forEach((p) => routeCoords.push(p));
+          updateRouteTable();
+          redrawPolyline();
+          updateStatus(`Loaded ${points.length} waypoints from GeoJSON.`);
+        } catch (err) {
+          updateStatus(`GeoJSON parse failed: ${err.message}`, false);
+        }
+      };
+    }
+
+    function initMap() {
+      if (!window.vw || !window.vw.Map) {
+        updateStatus('VWorld API unavailable. Check API key.', false);
+        return;
+      }
+      map = new vw.Map('map', {
+        basemapType: vw.BasemapType.SATELLITE,
+        controlDensity: vw.DensityType.BASIC,
+        interactionDensity: vw.DensityType.FULL,
+        homePosition: {
+          center: { x: 126.9779692, y: 37.566535, z: 500 },
+          heading: 0,
+          pitch: -45,
+        },
+      });
+      viewer = map.viewer || (map.getView && map.getView());
+      updateRouteTable();
+      installHandlers();
+      updateStatus('Click "Enable Drawing" to mark waypoints.');
+
+      if (clickHandler && typeof map.off === 'function') {
+        map.off('click', clickHandler);
+      }
+      clickHandler = function (evt) {
+        if (!drawing) {
+          return;
+        }
+        const coord = evt.coordinate;
+        const alt = Number(defaultAltInput.value) || 40;
+        addPoint(coord.y, coord.x, alt);
+        updateStatus(`Waypoint ${routeCoords.length} recorded.`);
+      };
+      if (typeof map.on === 'function') {
+        map.on('click', clickHandler);
+      }
+    }
+
+    window.addEventListener('vworldready', initMap);
+  </script>
+</body>
+</html>

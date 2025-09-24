@@ -1,0 +1,5 @@
+# MAVSDK Drone Control Server Requirements
+mavsdk>=3.10.0
+websockets>=11.0.0
+asyncio-mqtt>=0.13.0
+numpy>=1.24.0

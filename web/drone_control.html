@@ -1,0 +1,977 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>MAVSDK Drone Control Dashboard</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
+      color: #fff;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 400px;
+      grid-template-rows: 60px 1fr;
+      height: 100vh;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .header {
+      grid-column: 1 / -1;
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px;
+      backdrop-filter: blur(10px);
+    }
+
+    .header h1 {
+      font-size: 24px;
+      font-weight: 600;
+    }
+
+    .connection-status {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .status-indicator {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: #ff4444;
+      animation: pulse 2s infinite;
+    }
+
+    .status-indicator.connected {
+      background: #44ff44;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 1; }
+      50% { opacity: 0.5; }
+      100% { opacity: 1; }
+    }
+
+    .main-content {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+      overflow-y: auto;
+    }
+
+    .control-panel {
+      background: rgba(0, 0, 0, 0.2);
+      border-radius: 8px;
+      padding: 20px;
+      backdrop-filter: blur(10px);
+      overflow-y: auto;
+    }
+
+    .section {
+      margin-bottom: 25px;
+    }
+
+    .section h2 {
+      font-size: 18px;
+      margin-bottom: 15px;
+      color: #4fc3f7;
+      border-bottom: 2px solid #4fc3f7;
+      padding-bottom: 5px;
+    }
+
+    .button-group {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .btn {
+      padding: 12px 16px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 500;
+      transition: all 0.3s ease;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(45deg, #4fc3f7, #29b6f6);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      background: linear-gradient(45deg, #29b6f6, #0288d1);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(79, 195, 247, 0.4);
+    }
+
+    .btn-danger {
+      background: linear-gradient(45deg, #f44336, #d32f2f);
+      color: white;
+    }
+
+    .btn-danger:hover {
+      background: linear-gradient(45deg, #d32f2f, #b71c1c);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(244, 67, 54, 0.4);
+    }
+
+    .btn-success {
+      background: linear-gradient(45deg, #4caf50, #388e3c);
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: linear-gradient(45deg, #388e3c, #2e7d32);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(76, 175, 80, 0.4);
+    }
+
+    .btn-warning {
+      background: linear-gradient(45deg, #ff9800, #f57c00);
+      color: white;
+    }
+
+    .btn-warning:hover {
+      background: linear-gradient(45deg, #f57c00, #ef6c00);
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(255, 152, 0, 0.4);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none !important;
+      box-shadow: none !important;
+    }
+
+    .sensor-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    .sensor-card {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 15px;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+
+    .sensor-card h3 {
+      font-size: 14px;
+      margin-bottom: 8px;
+      color: #81c784;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .sensor-value {
+      font-size: 24px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 5px;
+    }
+
+    .sensor-unit {
+      font-size: 12px;
+      color: #b0bec5;
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-group label {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 14px;
+      color: #b0bec5;
+    }
+
+    .input-group input {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+      background: rgba(255, 255, 255, 0.1);
+      color: #fff;
+      font-size: 14px;
+    }
+
+    .input-group input::placeholder {
+      color: #b0bec5;
+    }
+
+    .input-group input:focus {
+      outline: none;
+      border-color: #4fc3f7;
+      box-shadow: 0 0 0 2px rgba(79, 195, 247, 0.2);
+    }
+
+    .log-container {
+      background: rgba(0, 0, 0, 0.3);
+      border-radius: 6px;
+      padding: 15px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: 'Courier New', monospace;
+      font-size: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+
+    .log-entry {
+      margin-bottom: 5px;
+      padding: 2px 0;
+    }
+
+    .log-entry.info {
+      color: #4fc3f7;
+    }
+
+    .log-entry.success {
+      color: #4caf50;
+    }
+
+    .log-entry.error {
+      color: #f44336;
+    }
+
+    .log-entry.warning {
+      color: #ff9800;
+    }
+
+    .timestamp {
+      color: #b0bec5;
+      margin-right: 8px;
+    }
+
+    .flight-mode {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 15px;
+    }
+
+    .mode-indicator {
+      padding: 8px 16px;
+      border-radius: 20px;
+      background: rgba(244, 67, 54, 0.2);
+      border: 1px solid #f44336;
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .mode-indicator.armed {
+      background: rgba(76, 175, 80, 0.2);
+      border-color: #4caf50;
+    }
+
+    .mode-indicator.manual {
+      background: rgba(255, 152, 0, 0.2);
+      border-color: #ff9800;
+    }
+
+    .mode-indicator.auto {
+      background: rgba(79, 195, 247, 0.2);
+      border-color: #4fc3f7;
+    }
+
+    .joystick-container {
+      display: flex;
+      justify-content: space-around;
+      margin: 20px 0;
+    }
+
+    .joystick {
+      width: 120px;
+      height: 120px;
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 50%;
+      position: relative;
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    .joystick-knob {
+      width: 30px;
+      height: 30px;
+      background: #4fc3f7;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      transition: all 0.1s ease;
+    }
+
+    .joystick-label {
+      text-align: center;
+      margin-top: 10px;
+      font-size: 12px;
+      color: #b0bec5;
+    }
+
+    .progress-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255, 255, 255, 0.2);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 5px 0;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #4caf50, #8bc34a);
+      transition: width 0.3s ease;
+    }
+
+    .progress-fill.warning {
+      background: linear-gradient(90deg, #ff9800, #ffc107);
+    }
+
+    .progress-fill.danger {
+      background: linear-gradient(90deg, #f44336, #e91e63);
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        grid-template-columns: 1fr;
+        grid-template-rows: 60px 1fr 1fr;
+      }
+      
+      .control-panel {
+        order: 2;
+      }
+      
+      .main-content {
+        order: 1;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🚁 MAVSDK Drone Control Dashboard</h1>
+      <div class="connection-status">
+        <div class="status-indicator" id="connectionStatus"></div>
+        <span id="connectionText">Disconnected</span>
+      </div>
+    </div>
+
+    <div class="main-content">
+      <div class="section">
+        <h2>📊 Flight Status</h2>
+        <div class="flight-mode">
+          <div class="mode-indicator" id="flightMode">DISCONNECTED</div>
+          <div class="mode-indicator" id="armStatus">DISARMED</div>
+        </div>
+        
+        <div class="sensor-grid">
+          <div class="sensor-card">
+            <h3>Altitude</h3>
+            <div class="sensor-value" id="altitude">0.0</div>
+            <div class="sensor-unit">meters</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="altitudeBar" style="width: 0%"></div>
+            </div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Speed</h3>
+            <div class="sensor-value" id="speed">0.0</div>
+            <div class="sensor-unit">m/s</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="speedBar" style="width: 0%"></div>
+            </div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Battery</h3>
+            <div class="sensor-value" id="battery">0</div>
+            <div class="sensor-unit">%</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="batteryBar" style="width: 0%"></div>
+            </div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>GPS Satellites</h3>
+            <div class="sensor-value" id="gpsSats">0</div>
+            <div class="sensor-unit">satellites</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="gpsBar" style="width: 0%"></div>
+            </div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Roll</h3>
+            <div class="sensor-value" id="roll">0.0</div>
+            <div class="sensor-unit">degrees</div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Pitch</h3>
+            <div class="sensor-value" id="pitch">0.0</div>
+            <div class="sensor-unit">degrees</div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Yaw</h3>
+            <div class="sensor-value" id="yaw">0.0</div>
+            <div class="sensor-unit">degrees</div>
+          </div>
+          
+          <div class="sensor-card">
+            <h3>Signal Strength</h3>
+            <div class="sensor-value" id="signalStrength">0</div>
+            <div class="sensor-unit">%</div>
+            <div class="progress-bar">
+              <div class="progress-fill" id="signalBar" style="width: 0%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🎮 Manual Control</h2>
+        <div class="joystick-container">
+          <div>
+            <div class="joystick" id="throttleJoystick">
+              <div class="joystick-knob" id="throttleKnob"></div>
+            </div>
+            <div class="joystick-label">Throttle</div>
+          </div>
+          <div>
+            <div class="joystick" id="yawJoystick">
+              <div class="joystick-knob" id="yawKnob"></div>
+            </div>
+            <div class="joystick-label">Yaw</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="control-panel">
+      <div class="section">
+        <h2>🔗 Connection</h2>
+        <div class="input-group">
+          <label for="connectionUrl">Connection URL:</label>
+          <input type="text" id="connectionUrl" placeholder="udp://:14540" value="udp://:14540">
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="connectBtn">Connect</button>
+          <button class="btn btn-danger" id="disconnectBtn" disabled>Disconnect</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🚀 Flight Control</h2>
+        <div class="button-group">
+          <button class="btn btn-success" id="armBtn" disabled>Arm</button>
+          <button class="btn btn-danger" id="disarmBtn" disabled>Disarm</button>
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="takeoffBtn" disabled>Takeoff</button>
+          <button class="btn btn-warning" id="landBtn" disabled>Land</button>
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="returnToLaunchBtn" disabled>RTL</button>
+          <button class="btn btn-warning" id="holdBtn" disabled>Hold</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>🎯 Mission Control</h2>
+        <div class="input-group">
+          <label for="maxAltitude">Max Altitude (m):</label>
+          <input type="number" id="maxAltitude" placeholder="5" value="5" min="1" max="20">
+        </div>
+        <div class="input-group">
+          <label for="targetAltitude">Target Altitude (m):</label>
+          <input type="number" id="targetAltitude" placeholder="3" value="3" min="1" max="20">
+        </div>
+        <div class="input-group">
+          <label for="targetLat">Target Latitude:</label>
+          <input type="number" id="targetLat" placeholder="37.5665" step="0.000001">
+        </div>
+        <div class="input-group">
+          <label for="targetLon">Target Longitude:</label>
+          <input type="number" id="targetLon" placeholder="126.9780" step="0.000001">
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" id="goToBtn" disabled>Go To</button>
+          <button class="btn btn-warning" id="orbitBtn" disabled>Orbit</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <h2>📝 System Log</h2>
+        <div class="log-container" id="logContainer">
+          <div class="log-entry info">
+            <span class="timestamp">[00:00:00]</span>
+            <span>System initialized. Ready to connect.</span>
+          </div>
+        </div>
+        <div class="button-group">
+          <button class="btn btn-secondary" id="clearLogBtn">Clear Log</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    class DroneController {
+      constructor() {
+        this.drone = null;
+        this.connected = false;
+        this.armed = false;
+        this.flightMode = 'UNKNOWN';
+        this.sensorData = {
+          altitude: 0,
+          speed: 0,
+          battery: 0,
+          gpsSats: 0,
+          roll: 0,
+          pitch: 0,
+          yaw: 0,
+          signalStrength: 0
+        };
+        
+        this.initializeEventListeners();
+        this.initializeJoysticks();
+        this.startSensorSimulation();
+      }
+
+      initializeEventListeners() {
+        // Connection controls
+        document.getElementById('connectBtn').addEventListener('click', () => this.connect());
+        document.getElementById('disconnectBtn').addEventListener('click', () => this.disconnect());
+        
+        // Flight controls
+        document.getElementById('armBtn').addEventListener('click', () => this.arm());
+        document.getElementById('disarmBtn').addEventListener('click', () => this.disarm());
+        document.getElementById('takeoffBtn').addEventListener('click', () => this.takeoff());
+        document.getElementById('landBtn').addEventListener('click', () => this.land());
+        document.getElementById('returnToLaunchBtn').addEventListener('click', () => this.returnToLaunch());
+        document.getElementById('holdBtn').addEventListener('click', () => this.hold());
+        
+        // Mission controls
+        document.getElementById('goToBtn').addEventListener('click', () => this.goTo());
+        document.getElementById('orbitBtn').addEventListener('click', () => this.orbit());
+        
+        // Utility
+        document.getElementById('clearLogBtn').addEventListener('click', () => this.clearLog());
+      }
+
+      initializeJoysticks() {
+        // Throttle joystick
+        const throttleJoystick = document.getElementById('throttleJoystick');
+        const throttleKnob = document.getElementById('throttleKnob');
+        
+        this.setupJoystick(throttleJoystick, throttleKnob, (x, y) => {
+          // Throttle control logic
+          this.log(`Throttle: ${Math.round(y * 100)}%`, 'info');
+        });
+
+        // Yaw joystick
+        const yawJoystick = document.getElementById('yawJoystick');
+        const yawKnob = document.getElementById('yawKnob');
+        
+        this.setupJoystick(yawJoystick, yawKnob, (x, y) => {
+          // Yaw control logic
+          this.log(`Yaw: ${Math.round(x * 100)}%`, 'info');
+        });
+      }
+
+      setupJoystick(joystick, knob, callback) {
+        let isDragging = false;
+        
+        joystick.addEventListener('mousedown', (e) => {
+          isDragging = true;
+          joystick.style.cursor = 'grabbing';
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+          if (!isDragging) return;
+          
+          const rect = joystick.getBoundingClientRect();
+          const centerX = rect.left + rect.width / 2;
+          const centerY = rect.top + rect.height / 2;
+          
+          const x = Math.max(-1, Math.min(1, (e.clientX - centerX) / (rect.width / 2)));
+          const y = Math.max(-1, Math.min(1, (e.clientY - centerY) / (rect.height / 2)));
+          
+          const knobX = x * (rect.width / 2 - 15);
+          const knobY = y * (rect.height / 2 - 15);
+          
+          knob.style.transform = `translate(${knobX}px, ${knobY}px)`;
+          
+          callback(x, y);
+        });
+        
+        document.addEventListener('mouseup', () => {
+          if (isDragging) {
+            isDragging = false;
+            joystick.style.cursor = 'grab';
+            knob.style.transform = 'translate(-50%, -50%)';
+            callback(0, 0);
+          }
+        });
+      }
+
+      async connect() {
+        const url = document.getElementById('connectionUrl').value;
+        this.log(`Connecting to ${url}...`, 'info');
+        
+        try {
+          // Simulate connection process
+          await this.simulateDelay(2000);
+          
+          this.connected = true;
+          this.updateConnectionStatus();
+          this.updateButtonStates();
+          this.log('Connected successfully!', 'success');
+          
+          // Start receiving telemetry
+          this.startTelemetryUpdates();
+          
+        } catch (error) {
+          this.log(`Connection failed: ${error.message}`, 'error');
+        }
+      }
+
+      async disconnect() {
+        this.log('Disconnecting...', 'info');
+        
+        this.connected = false;
+        this.armed = false;
+        this.flightMode = 'DISCONNECTED';
+        
+        this.updateConnectionStatus();
+        this.updateButtonStates();
+        this.log('Disconnected', 'warning');
+      }
+
+      async arm() {
+        this.log('Arming drone...', 'info');
+        
+        try {
+          await this.simulateDelay(1000);
+          this.armed = true;
+          this.updateButtonStates();
+          this.log('Drone armed successfully!', 'success');
+        } catch (error) {
+          this.log(`Arming failed: ${error.message}`, 'error');
+        }
+      }
+
+      async disarm() {
+        this.log('Disarming drone...', 'info');
+        
+        try {
+          await this.simulateDelay(1000);
+          this.armed = false;
+          this.updateButtonStates();
+          this.log('Drone disarmed', 'warning');
+        } catch (error) {
+          this.log(`Disarming failed: ${error.message}`, 'error');
+        }
+      }
+
+      async takeoff() {
+        const altitude = parseFloat(document.getElementById('targetAltitude').value) || 3.0;
+        const maxAltitude = parseFloat(document.getElementById('maxAltitude').value) || 5.0;
+        
+        if (altitude > maxAltitude) {
+          this.log(`Target altitude (${altitude}m) exceeds max altitude (${maxAltitude}m)`, 'error');
+          return;
+        }
+        
+        this.log(`Initiating takeoff to ${altitude}m (max: ${maxAltitude}m)...`, 'info');
+        
+        try {
+          await this.simulateDelay(2000);
+          this.flightMode = 'TAKEOFF';
+          this.updateButtonStates();
+          this.log('Takeoff initiated', 'success');
+        } catch (error) {
+          this.log(`Takeoff failed: ${error.message}`, 'error');
+        }
+      }
+
+      async land() {
+        this.log('Initiating landing...', 'info');
+        
+        try {
+          await this.simulateDelay(2000);
+          this.flightMode = 'LAND';
+          this.updateButtonStates();
+          this.log('Landing initiated', 'warning');
+        } catch (error) {
+          this.log(`Landing failed: ${error.message}`, 'error');
+        }
+      }
+
+      async returnToLaunch() {
+        this.log('Returning to launch...', 'info');
+        
+        try {
+          await this.simulateDelay(1000);
+          this.flightMode = 'RTL';
+          this.updateButtonStates();
+          this.log('Return to launch initiated', 'warning');
+        } catch (error) {
+          this.log(`RTL failed: ${error.message}`, 'error');
+        }
+      }
+
+      async hold() {
+        this.log('Holding position...', 'info');
+        
+        try {
+          await this.simulateDelay(1000);
+          this.flightMode = 'HOLD';
+          this.updateButtonStates();
+          this.log('Position hold activated', 'info');
+        } catch (error) {
+          this.log(`Hold failed: ${error.message}`, 'error');
+        }
+      }
+
+      async goTo() {
+        const lat = parseFloat(document.getElementById('targetLat').value);
+        const lon = parseFloat(document.getElementById('targetLon').value);
+        const alt = parseFloat(document.getElementById('targetAltitude').value);
+        const maxAltitude = parseFloat(document.getElementById('maxAltitude').value) || 5.0;
+        
+        if (!lat || !lon || !alt) {
+          this.log('Please enter valid coordinates and altitude', 'error');
+          return;
+        }
+        
+        if (alt > maxAltitude) {
+          this.log(`Target altitude (${alt}m) exceeds max altitude (${maxAltitude}m)`, 'error');
+          return;
+        }
+        
+        this.log(`Going to: ${lat.toFixed(6)}, ${lon.toFixed(6)} at ${alt}m (max: ${maxAltitude}m)`, 'info');
+        
+        try {
+          await this.simulateDelay(2000);
+          this.flightMode = 'MISSION';
+          this.updateButtonStates();
+          this.log('Mission started', 'success');
+        } catch (error) {
+          this.log(`Mission failed: ${error.message}`, 'error');
+        }
+      }
+
+      async orbit() {
+        const lat = parseFloat(document.getElementById('targetLat').value);
+        const lon = parseFloat(document.getElementById('targetLon').value);
+        const alt = parseFloat(document.getElementById('targetAltitude').value);
+        const maxAltitude = parseFloat(document.getElementById('maxAltitude').value) || 5.0;
+        
+        if (!lat || !lon || !alt) {
+          this.log('Please enter valid coordinates and altitude', 'error');
+          return;
+        }
+        
+        if (alt > maxAltitude) {
+          this.log(`Target altitude (${alt}m) exceeds max altitude (${maxAltitude}m)`, 'error');
+          return;
+        }
+        
+        this.log(`Starting orbit around: ${lat.toFixed(6)}, ${lon.toFixed(6)} at ${alt}m (max: ${maxAltitude}m)`, 'info');
+        
+        try {
+          await this.simulateDelay(2000);
+          this.flightMode = 'ORBIT';
+          this.updateButtonStates();
+          this.log('Orbit started', 'success');
+        } catch (error) {
+          this.log(`Orbit failed: ${error.message}`, 'error');
+        }
+      }
+
+      updateConnectionStatus() {
+        const statusIndicator = document.getElementById('connectionStatus');
+        const statusText = document.getElementById('connectionText');
+        
+        if (this.connected) {
+          statusIndicator.classList.add('connected');
+          statusText.textContent = 'Connected';
+        } else {
+          statusIndicator.classList.remove('connected');
+          statusText.textContent = 'Disconnected';
+        }
+      }
+
+      updateButtonStates() {
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const armBtn = document.getElementById('armBtn');
+        const disarmBtn = document.getElementById('disarmBtn');
+        const takeoffBtn = document.getElementById('takeoffBtn');
+        const landBtn = document.getElementById('landBtn');
+        const returnToLaunchBtn = document.getElementById('returnToLaunchBtn');
+        const holdBtn = document.getElementById('holdBtn');
+        const goToBtn = document.getElementById('goToBtn');
+        const orbitBtn = document.getElementById('orbitBtn');
+
+        connectBtn.disabled = this.connected;
+        disconnectBtn.disabled = !this.connected;
+        armBtn.disabled = !this.connected || this.armed;
+        disarmBtn.disabled = !this.connected || !this.armed;
+        takeoffBtn.disabled = !this.connected || !this.armed;
+        landBtn.disabled = !this.connected;
+        returnToLaunchBtn.disabled = !this.connected;
+        holdBtn.disabled = !this.connected;
+        goToBtn.disabled = !this.connected;
+        orbitBtn.disabled = !this.connected;
+      }
+
+      updateSensorDisplay() {
+        // Update sensor values
+        document.getElementById('altitude').textContent = this.sensorData.altitude.toFixed(1);
+        document.getElementById('speed').textContent = this.sensorData.speed.toFixed(1);
+        document.getElementById('battery').textContent = Math.round(this.sensorData.battery);
+        document.getElementById('gpsSats').textContent = Math.round(this.sensorData.gpsSats);
+        document.getElementById('roll').textContent = this.sensorData.roll.toFixed(1);
+        document.getElementById('pitch').textContent = this.sensorData.pitch.toFixed(1);
+        document.getElementById('yaw').textContent = this.sensorData.yaw.toFixed(1);
+        document.getElementById('signalStrength').textContent = Math.round(this.sensorData.signalStrength);
+
+        // Update progress bars
+        this.updateProgressBar('altitudeBar', this.sensorData.altitude, 100, 'altitude');
+        this.updateProgressBar('speedBar', this.sensorData.speed, 20, 'speed');
+        this.updateProgressBar('batteryBar', this.sensorData.battery, 100, 'battery');
+        this.updateProgressBar('gpsBar', this.sensorData.gpsSats, 20, 'gps');
+        this.updateProgressBar('signalBar', this.sensorData.signalStrength, 100, 'signal');
+
+        // Update flight mode and arm status
+        const flightModeElement = document.getElementById('flightMode');
+        const armStatusElement = document.getElementById('armStatus');
+        
+        flightModeElement.textContent = this.flightMode;
+        flightModeElement.className = 'mode-indicator';
+        
+        if (this.connected) {
+          if (this.flightMode === 'MANUAL') {
+            flightModeElement.classList.add('manual');
+          } else if (this.flightMode === 'AUTO' || this.flightMode === 'MISSION') {
+            flightModeElement.classList.add('auto');
+          }
+        }
+
+        armStatusElement.textContent = this.armed ? 'ARMED' : 'DISARMED';
+        armStatusElement.className = 'mode-indicator';
+        if (this.armed) {
+          armStatusElement.classList.add('armed');
+        }
+      }
+
+      updateProgressBar(id, value, max, type) {
+        const percentage = Math.min(100, (value / max) * 100);
+        const bar = document.getElementById(id);
+        bar.style.width = `${percentage}%`;
+        
+        // Update color based on value
+        bar.className = 'progress-fill';
+        if (type === 'battery' && percentage < 20) {
+          bar.classList.add('danger');
+        } else if (type === 'battery' && percentage < 50) {
+          bar.classList.add('warning');
+        } else if (type === 'signal' && percentage < 30) {
+          bar.classList.add('danger');
+        } else if (type === 'signal' && percentage < 60) {
+          bar.classList.add('warning');
+        }
+      }
+
+      startSensorSimulation() {
+        setInterval(() => {
+          if (this.connected) {
+            // Simulate realistic sensor data
+            this.sensorData.altitude += (Math.random() - 0.5) * 0.5;
+            this.sensorData.altitude = Math.max(0, this.sensorData.altitude);
+            
+            this.sensorData.speed = Math.max(0, this.sensorData.speed + (Math.random() - 0.5) * 0.2);
+            
+            this.sensorData.battery = Math.max(0, this.sensorData.battery - 0.01);
+            
+            this.sensorData.gpsSats = Math.max(0, Math.min(20, this.sensorData.gpsSats + (Math.random() - 0.5) * 0.5));
+            
+            this.sensorData.roll += (Math.random() - 0.5) * 2;
+            this.sensorData.pitch += (Math.random() - 0.5) * 2;
+            this.sensorData.yaw += (Math.random() - 0.5) * 1;
+            
+            this.sensorData.signalStrength = Math.max(0, Math.min(100, this.sensorData.signalStrength + (Math.random() - 0.5) * 2));
+            
+            this.updateSensorDisplay();
+          }
+        }, 100);
+      }
+
+      startTelemetryUpdates() {
+        // This would be replaced with actual MAVSDK telemetry subscription
+        this.log('Telemetry updates started', 'info');
+      }
+
+      log(message, type = 'info') {
+        const logContainer = document.getElementById('logContainer');
+        const timestamp = new Date().toLocaleTimeString();
+        
+        const logEntry = document.createElement('div');
+        logEntry.className = `log-entry ${type}`;
+        logEntry.innerHTML = `<span class="timestamp">[${timestamp}]</span><span>${message}</span>`;
+        
+        logContainer.appendChild(logEntry);
+        logContainer.scrollTop = logContainer.scrollHeight;
+        
+        // Keep only last 100 log entries
+        while (logContainer.children.length > 100) {
+          logContainer.removeChild(logContainer.firstChild);
+        }
+      }
+
+      clearLog() {
+        document.getElementById('logContainer').innerHTML = '';
+        this.log('Log cleared', 'info');
+      }
+
+      simulateDelay(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+      }
+    }
+
+    // Initialize the drone controller when the page loads
+    document.addEventListener('DOMContentLoaded', () => {
+      window.droneController = new DroneController();
+    });
+  </script>
+</body>
+</html>
